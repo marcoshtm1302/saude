@@ -1,0 +1,362 @@
+---
+title: "**Relatório de Desembolso Financeiro - Saúde**"
+subtitle: "Análise Técnica de Indicadores (2021-2025)"
+author: "Comissão de Estatística"
+date: today
+date-format: "DD/MM/YYYY" # Garante o padrão brasileiro 22/12/2025
+lang: pt
+format:
+  pdf:
+    mainfont: Arial
+    fontsize: 12pt
+    pdf-engine: xelatex
+    geometry:
+      - top=15mm
+      - left=15mm
+      - right=10mm
+      - bottom=10mm
+    include-in-header:
+      text: |
+        \usepackage{setspace}
+        \doublespacing
+        \usepackage{xcolor}
+        \definecolor{institucional}{HTML}{3F6473}
+        \usepackage{titling}
+        % O % antes do texto evita o erro "Missing begin document"
+        % Estilização do Título Principal
+        \pretitle{\begin{center}\LARGE\bfseries\color{institucional}}
+        \posttitle{\par\end{center}\vskip 0.5em}
+    include-before-body:
+      text: |
+        \begin{center}
+          % Altura ideal para equilíbrio visual entre 2.5cm e 4cm
+          \includegraphics[height=8cm]{logo_prefeitura.jpeg} 
+          \vspace{1.5cm}
+        \end{center}
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+\newpage
+
+{{< pagebreak >}}
+
+```{r}
+#| echo: false
+#| output: false
+
+### LEITURA DOS DADOS
+library(tidyverse) # Para manipulação de dados e leitura
+library(janitor)   # Para limpar nomes de colunas (boas práticas)
+
+# 1. Definição do Diretório
+# Nota: No R, usamos barra normal (/) ou barra invertida dupla (\\)
+caminho_pasta <- "E:/Hd Marcos/COMISSÃO ESTATISTICA/1. GERAL/saude/nova_analise"
+
+# ==============================================================================
+# FUNÇÃO: Leitura e Consolidação
+# Esta função encapsula a lógica de ler, criar a coluna ano e juntar
+# ==============================================================================
+ler_e_consolidar <- function(path, padrao_nome) {
+  
+  # a. Listar arquivos que correspondem ao padrão (regex)
+  arquivos <- list.files(path = path, 
+                         pattern = padrao_nome, 
+                         full.names = TRUE)
+  
+  # b. Iteração com map_dfr (map dataframe row-bind)
+  # Isso aplica a função de leitura em cada arquivo e "cola" um embaixo do outro
+  dados_consolidados <- arquivos %>% 
+    map_dfr(function(arquivo) {
+      
+      # Extração do Ano usando Expressão Regular (Regex)
+      # \\d{4} procura por exatamente 4 dígitos consecutivos no nome do arquivo
+      ano_extraido <- str_extract(arquivo, "\\d{4}")
+      
+      # Leitura do arquivo
+      # read_csv2 é usado para CSVs brasileiros (separador ';' e decimal ',')
+      # locale("latin1") é comum em dados de prefeituras (evita erros de acentuação)
+      read_csv2(arquivo, show_col_types = FALSE, locale = locale(encoding = "latin1")) %>% 
+        
+        # Limpeza básica dos nomes das colunas (remove espaços e acentos)
+        clean_names() %>% 
+        
+        # Transformação: Adiciona a coluna do ano
+        mutate(ano_referencia = as.integer(ano_extraido)) %>% 
+        
+        # Converte todas as colunas para caractere inicialmente para evitar 
+        # erros de tipagem entre anos diferentes (ex: numérico em 2021, texto em 2022)
+        # Depois você pode converter para numérico o que for necessário.
+        mutate(across(everything(), as.character))
+    })
+  
+  return(dados_consolidados)
+}
+
+# ==============================================================================
+# EXECUÇÃO DA LEITURA
+# ==============================================================================
+
+message("Iniciando leitura das Despesas Orçamentárias...")
+df_despesas <- ler_e_consolidar(caminho_pasta, "despesa_orcamentaria")
+
+message("Iniciando leitura das Fontes...")
+df_fontes <- ler_e_consolidar(caminho_pasta, "fonte")
+
+# ==============================================================================
+# TRATAMENTO FINAL (Pós-carregamento)
+# ==============================================================================
+
+# Exemplo: Convertendo a coluna de valor para numérico (ajuste o nome da coluna conforme seu arquivo)
+# O 'readr' (do tidyverse) geralmente lida bem, mas aqui garantimos a conversão.
+df_fontes <- df_fontes %>% 
+  filter(!str_detect(fonte_de_recurso, "(?i)total"))
+# Vamos supor que a coluna de valor se chame 'valor_empenhado' ou similar.
+# Abaixo é um código genérico para tentar converter colunas que parecem números.
+df_despesas <- type_convert(df_despesas)
+df_fontes <- type_convert(df_fontes)
+
+# Visualização rápida
+glimpse(df_despesas)
+glimpse(df_fontes)
+
+message("Processo concluído! Dataframes 'df_despesas' e 'df_fontes' criados.")
+```
+
+```{r}
+#| include: false
+library(tidyverse)
+library(lubridate) # Pacote essencial para lidar com datas
+
+# 1. TRATAMENTO DE DADOS (Limpeza)
+# ==============================================================================
+
+# Tratando DF_DESPESAS
+df_despesas_limpo <- df_despesas %>%
+  mutate(
+    # Converte string "04/01/2021" para Objeto Data
+    data = dmy(data), 
+    
+    # Converte 'pa' para texto para remover notação científica (ex: 1.03e+12)
+    pa = as.character(format(pa, scientific = FALSE)),
+    
+    # Garante que números sejam números (redundância de segurança)
+    empenhado = as.numeric(empenhado),
+    liquidado = as.numeric(liquidado),
+    pago = as.numeric(pago)
+  )
+
+# Tratando DF_FONTES
+df_fontes_limpo <- df_fontes %>%
+  mutate(
+    # Convertendo múltiplas colunas de data de uma vez
+    across(c(data_liquidacao, data_de_pagamento, data_de_vencimento), dmy),
+    
+    valor_liquido = as.numeric(valor_liquido)
+  )
+
+# 2. AGRUPAMENTO E ANÁLISE (A Lógica Algorítmica)
+# ==============================================================================
+
+# A. Agrupamento por FONTE DE RECURSO (somando valor liquido)
+# Lógica: Soma(Valor) para cada conjunto único de (Fonte, Ano)
+resumo_fontes <- df_fontes_limpo %>%
+  group_by(fonte_de_recurso, ano_referencia) %>%
+  summarise(
+    total_liquido = sum(valor_liquido, na.rm = TRUE),
+    qtd_lancamentos = n(),
+    .groups = "drop" # Desagrupa após o cálculo para otimizar memória
+  ) %>%
+  arrange(desc(total_liquido))
+
+# B. Agrupamento por DESPESA (Natureza)
+resumo_despesas <- df_despesas_limpo %>%
+  group_by(natureza, ano_referencia) %>%
+  summarise(
+    total_empenhado = sum(empenhado, na.rm = TRUE),
+    total_pago = sum(pago, na.rm = TRUE),
+    # Cálculo de eficiência: % Pago em relação ao Empenhado
+    percentual_execucao = (total_pago / total_empenhado) * 100,
+    .groups = "drop"
+  ) %>%
+  arrange(desc(total_empenhado))
+
+# 3. EXIBINDO OS RESULTADOS
+# ==============================================================================
+
+print("--- TOP 5 FONTES DE RECURSO (ACUMULADO) ---")
+print(head(resumo_fontes, 5))
+
+print("--- TOP 5 NATUREZAS DE DESPESA ---")
+print(head(resumo_despesas, 5))
+```
+
+```{r}
+#| include: false
+#VERIFICANDO DATAS ERRADAS
+# Vamos olhar os valores únicos que NÃO parecem datas na coluna de vencimento
+valores_estranhos <- df_fontes %>%
+  select(data_de_vencimento) %>%
+  distinct() %>%
+  filter(!str_detect(data_de_vencimento, "\\d{2}/\\d{2}/\\d{4}")) # Filtra o que não tem formato dd/mm/aaaa
+
+print("Valores que não são datas encontrados:")
+print(valores_estranhos)
+```
+
+\vfill
+
+## Contexto dos dados analisados
+
+Fonte dos dados: Portal da Transparência\
+Relatórios: "Ordem Cronológica dos Pagamentos" e "Despesa Orçamentária"\
+Total de dados lidos: `r nrow(df_despesas) + nrow(df_fontes)`
+
+{{< pagebreak >}}
+
+# Dados sobre os valores Liquidados nos anos de 2021 à 2025
+
+```{r}
+#| include: true
+#| fig-align: center
+#| out-width: "100%"  # <--- ESTE É O COMANDO MÁGICO
+#| fig-width: 9       # Aumentamos um pouco a largura base de geração
+#| fig-aspect: 0.55   # Controla a proporção (altura é 55% da largura)
+library(tidyverse)
+library(scales)
+
+# ==============================================================================
+# 1. PREPARAÇÃO DOS DADOS (Garantindo uso exclusivo de df_fontes_limpo)
+# ==============================================================================
+
+# ATENÇÃO PONTO 4: O script inicia pegando APENAS df_fontes_limpo.
+# Ele agrupa por ano e SOMA todos os registros de 'valor_liquido' daquele ano.
+df_plot_data_final <- df_fontes_limpo %>%
+  group_by(ano_referencia) %>%
+  summarise(total_ano = sum(valor_liquido, na.rm = TRUE)) %>% # Soma simples
+  ungroup() %>% # Boa prática desagrupar após resumir
+  arrange(ano_referencia) %>%
+  mutate(
+    # --- Cálculos Matemáticos (Variações) ---
+    total_anterior = lag(total_ano),
+    var_yoy = (total_ano - total_anterior) / total_anterior,
+    total_base = first(total_ano),
+    var_acum = (total_ano - total_base) / total_base,
+    
+    # --- Formatação dos Rótulos ---
+    # AJUSTE PONTO 3: Rótulo interno será diminuído no ggplot
+    label_interna = paste0("R$ ", number(total_ano / 1e6, accuracy = 0.1, decimal.mark = ","), " M"),
+    
+    # Configuração das setas e cores do topo
+    seta = case_when(var_yoy > 0.001 ~ "▲", var_yoy < -0.001 ~ "▼", TRUE ~ ""),
+    cor_topo = case_when(var_yoy > 0 ~ "#B93F35", var_yoy < 0 ~ "#3F9C5F", TRUE ~ "grey50"),
+    
+    # Texto do rótulo superior
+    label_topo = if_else(
+      ano_referencia == min(ano_referencia), 
+      "Ano Base",
+      paste0(seta, " ", percent(var_yoy, accuracy = 0.1), "\nAcum: ", percent(var_acum, accuracy = 0.1, prefix = "+"))
+    )
+  )
+
+# Cálculo dinâmico do limite superior (+25% de margem)
+limite_sup_dinamico <- max(df_plot_data_final$total_ano) * 1.25
+
+# ==============================================================================
+# 2. GERAÇÃO DO GRÁFICO (Com os ajustes de estética)
+# ==============================================================================
+
+ggplot(df_plot_data_final, aes(x = factor(ano_referencia), y = total_ano)) +
+  
+  # Barras com gradiente
+  geom_col(aes(fill = total_ano), width = 0.75, show.legend = FALSE) +
+  scale_fill_gradient(low = "#92BBD9", high = "#4F6473") +
+  
+  # AJUSTE PONTO 3: Rótulos internos menores (size = 4)
+  geom_text(
+    aes(label = label_interna),
+    position = position_stack(vjust = 0.5), # Centralizado na barra
+    color = "white", 
+    fontface = "bold", 
+    size = 4 # Reduzido de 5.5 para 4
+  ) +
+  
+  # Rótulos do topo (Setas)
+  geom_text(
+    aes(label = label_topo, color = cor_topo),
+    vjust = -0.4, fontface = "bold", size = 3.2, lineheight = 1.0
+  ) +
+  scale_color_identity() +
+  
+  # Configuração do Eixo Y
+  scale_y_continuous(
+    labels = label_number(scale = 1e-6, prefix = "R$ ", suffix = "M", big.mark = ".", decimal.mark = ","),
+    breaks = pretty_breaks(n = 6), # Gera quebras automáticas e bonitas
+    limits = c(0, limite_sup_dinamico),
+    expand = c(0, 0)
+  ) +
+  
+  # Títulos e Legendas
+  labs(
+    # AJUSTE PONTO 1: Quebra de linha automática no título (width = 45 caracteres)
+    title = str_wrap("Evolução do Desembolso Financeiro (Pago) - Secretaria de Saúde", width = 45),
+    y = "Total Pago (R$)", 
+    x = NULL,
+    caption = "Fonte: Dados Financeiros da Saúde | Processamento: R"
+  ) +
+  
+  # Tema e Estética Fina
+  theme_minimal() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_line(color = "#E0E0E0", linewidth = 0.5),
+    
+    # AJUSTE PONTO 2: Eixo Y menor e sem negrito ("plain")
+    axis.text.y = element_text(size = 10, color = "grey40", face = "plain"),
+    axis.title.y = element_text(size = 10, color = "grey40", face = "plain", margin = margin(r=10)),
+    
+    # Eixo X (Anos) mantido um pouco maior para destaque
+    axis.text.x = element_text(size = 12, color = "black", face = "plain", margin = margin(t=5)),
+    
+    # Configuração do Título Centralizado
+    plot.title = element_text(size = 16, face = "plain", hjust = 0.5, margin = margin(b = 25)),
+    plot.caption = element_text(size = 8, color = "grey60", hjust = 0)
+  )
+```
+
+```{r}
+#| label: tabela-detalhada-anual
+#| echo: false
+#| message: false
+#| warning: false
+
+library(knitr)
+library(scales)
+
+# 1. PREPARAÇÃO DOS DADOS PARA EXIBIÇÃO
+# Selecionamos apenas as colunas necessárias e formatamos para o padrão visual BR
+tabela_exibicao <- df_plot_data_final %>%
+  select(ano_referencia, total_ano, var_yoy, var_acum) %>%
+  mutate(
+    # Formatação de Moeda (R$ 1.000,00)
+    total_ano = number(total_ano, 
+                       prefix = "R$ ", 
+                       big.mark = ".", 
+                       decimal.mark = ",", 
+                       accuracy = 0.01), # Garante os centavos exatos
+    
+    # Formatação das Porcentagens (10,5%)
+    # O 'ifelse' serve para tratar o primeiro ano (que é NA/Vazio) e colocar um traço "-"
+    var_yoy = ifelse(is.na(var_yoy), "-", percent(var_yoy, accuracy = 0.1, decimal.mark = ",")),
+    var_acum = ifelse(is.na(var_acum), "-", percent(var_acum, accuracy = 0.1, decimal.mark = ","))
+  )
+
+# 2. GERAR A TABELA NO RELATÓRIO
+kable(tabela_exibicao,
+      caption = "Detalhamento da Execução Financeira Anual",
+      col.names = c("Ano", "Valor Total Pago (Exato)", "Variação Anual", "Cresc. Acumulado"),
+      align = c('l', 'r', 'c', 'c')) # l=esquerda, r=direita (números), c=centro
+```
