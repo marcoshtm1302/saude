@@ -4,31 +4,33 @@ on:
     - cron: '0 11 * * *' # 08:00 no horário de Brasília (UTC-3)
   push:
     branches: [main]
+  workflow_dispatch: # Adiciona botão para teste manual
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Baixar Codigo
+      - name: 1. Baixar Codigo
         uses: actions/checkout@v4
 
-      - name: Instalar R (Obrigatório para os pacotes)
+      - name: 2. Instalar R (O Motor)
         uses: r-lib/actions/setup-r@v2
         with:
-          r-version: '4.3.0'
+          r-version: '4.3.1'
 
-      - name: Instalar Quarto e TinyTeX (Motor PDF)
+      - name: 3. Instalar Quarto e TinyTeX (O Gerador de PDF)
         uses: quarto-dev/quarto-actions/setup@v2
         with:
           tinytex: true 
 
-      - name: Instalar Bibliotecas da Secretaria
-        run: Rscript -e 'install.packages(c("tidyverse", "scales", "janitor"))'
+      - name: 4. Instalar Bibliotecas (A Ferramenta)
+        run: |
+          Rscript -e 'install.packages(c("tidyverse", "scales", "janitor"))'
 
-      - name: Renderizar PDF
+      - name: 5. Renderizar PDF
         run: quarto render Projeto_saude.qmd --to pdf
 
-      - name: Upload do Relatorio Final
+      - name: 6. Upload do Relatorio Final
         uses: actions/upload-artifact@v4
         with:
           name: Relatorio-Saude-Final
