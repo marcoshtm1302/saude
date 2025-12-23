@@ -7,7 +7,6 @@ date-format: "DD/MM/YYYY" # Garante o padrão brasileiro 22/12/2025
 lang: pt
 format:
   pdf:
-    mainfont: Arial
     fontsize: 12pt
     pdf-engine: xelatex
     geometry:
