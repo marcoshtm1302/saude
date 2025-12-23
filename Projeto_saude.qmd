@@ -37,7 +37,6 @@ execute:
   echo: false
   warning: false
   message: false
-
 ---
 
 \newpage
@@ -54,7 +53,7 @@ library(janitor)   # Para limpar nomes de colunas (boas práticas)
 
 # 1. Definição do Diretório
 # Nota: No R, usamos barra normal (/) ou barra invertida dupla (\\)
-caminho_pasta <- "E:/Hd Marcos/COMISSÃO ESTATISTICA/1. GERAL/saude/nova_analise"
+caminho_pasta <- "."
 
 # ==============================================================================
 # FUNÇÃO: Leitura e Consolidação
