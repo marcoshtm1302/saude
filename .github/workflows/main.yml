@@ -23,6 +23,15 @@ jobs:
         with:
           tinytex: true 
 
+      # --- NOVO PASSO ADICIONADO AQUI ---
+      # Explicação Lógica: O Linux do GitHub vem "vazio". Para o R conseguir
+      # instalar (compilar) o Tidyverse, ele precisa dessas livrarias de sistema
+      # para lidar com criptografia (ssl), download (curl) e fontes/texto (harfbuzz/fribidi).
+      - name: 3.1. Instalar Dependências do Sistema (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev libssl-dev libfontconfig1-dev libfreetype6-dev pkg-config libharfbuzz-dev libfribidi-dev libpng-dev libtiff5-dev libjpeg-dev
+
       - name: 4. Instalar Bibliotecas (A Ferramenta)
         run: |
           Rscript -e 'install.packages(c("tidyverse", "scales", "janitor"))'
