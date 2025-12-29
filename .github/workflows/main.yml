@@ -4,7 +4,7 @@ on:
     - cron: '0 11 * * *' # 08:00 no horário de Brasília (UTC-3)
   push:
     branches: [main]
-  workflow_dispatch: # Adiciona botão para teste manual
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -42,39 +42,20 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Relatório Atualizado Automaticamente [Robô]"
-<<<<<<< HEAD
-          file_pattern: '*.pdf' # Só comita se for PDF
-          
-=======
           file_pattern: '*.pdf'
 
->>>>>>> 1a4787d057f83d5c039edd834a2a443d739198bf
       - name: 7. Enviar por E-mail
         uses: dawidd6/action-send-mail@v3
         with:
-          # Configurações do Servidor (Gmail)
           server_address: smtp.gmail.com
           server_port: 465
           secure: true
-          
-          # Credenciais (Pegando do Cofre do GitHub)
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
-          
-          # Detalhes do E-mail
-          subject: Relatório de Saúde Atualizado - ${{ github.run_number }}
-          # AQUI: Coloquei seu e-mail real. Se quiser mandar para mais gente, use vírgula.
+          subject: Relatório de Saúde Atualizado
           to: eng.amb.prof.marcos@gmail.com
           from: Robô de Dados <eng.amb.prof.marcos@gmail.com>
           body: |
-            Olá!
-            
-            O relatório de saúde foi atualizado automaticamente com os dados mais recentes.
-            Segue o PDF em anexo para análise.
-            
-            Atenciosamente,
-            Marcos Tomazini - Comissão Estatística.
-            
-          # O Arquivo para Anexar
+            O relatório foi atualizado.
+            Segue anexo.
           attachments: Projeto_saude.pdf
-
