@@ -5,8 +5,10 @@ on:
   push:
     branches: [main]
   workflow_dispatch: # Adiciona botão para teste manual
+
 permissions:
   contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,10 +26,6 @@ jobs:
         with:
           tinytex: true 
 
-      # --- NOVO PASSO ADICIONADO AQUI ---
-      # Explicação Lógica: O Linux do GitHub vem "vazio". Para o R conseguir
-      # instalar (compilar) o Tidyverse, ele precisa dessas livrarias de sistema
-      # para lidar com criptografia (ssl), download (curl) e fontes/texto (harfbuzz/fribidi).
       - name: 3.1. Instalar Dependências do Sistema (Linux)
         run: |
           sudo apt-get update
@@ -44,9 +42,9 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Relatório Atualizado Automaticamente [Robô]"
-          file_pattern: '*.pdf' # Só comita se for PDF
-          
-        - name: 7. Enviar por E-mail
+          file_pattern: '*.pdf'
+
+      - name: 7. Enviar por E-mail
         uses: dawidd6/action-send-mail@v3
         with:
           # Configurações do Servidor (Gmail)
@@ -54,13 +52,14 @@ jobs:
           server_port: 465
           secure: true
           
-          # Credenciais (Pegando do Cofre que criamos)
+          # Credenciais (Pegando do Cofre do GitHub)
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
           
           # Detalhes do E-mail
           subject: Relatório de Saúde Atualizado - ${{ github.run_number }}
-          to: seu_email@gmail.com, email_do_chefe@prefeitura.gov.br # Separe por vírgula
+          # AQUI: Coloquei seu e-mail real. Se quiser mandar para mais gente, use vírgula.
+          to: eng.amb.prof.marcos@gmail.com
           from: Robô de Dados <eng.amb.prof.marcos@gmail.com>
           body: |
             Olá!
