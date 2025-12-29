@@ -207,7 +207,7 @@ print(valores_estranhos)
 
 \vfill
 
-## Contexto dos dados analisados
+## Contexto dos dados analisados 
 
 Fonte dos dados: Portal da Transparência\
 Relatórios: "Ordem Cronológica dos Pagamentos" e "Despesa Orçamentária"\
