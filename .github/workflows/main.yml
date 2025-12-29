@@ -46,7 +46,7 @@ jobs:
           commit_message: "Relatório Atualizado Automaticamente [Robô]"
           file_pattern: '*.pdf' # Só comita se for PDF
           
-        - name: 7. Enviar por E-mail
+      - name: 7. Enviar por E-mail
         uses: dawidd6/action-send-mail@v3
         with:
           # Configurações do Servidor (Gmail)
@@ -73,3 +73,4 @@ jobs:
             
           # O Arquivo para Anexar
           attachments: Projeto_saude.pdf
+
