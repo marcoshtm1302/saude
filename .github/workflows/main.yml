@@ -1,4 +1,4 @@
-iname: Atualizar Relatorio Saude
+name: Atualizar Relatorio Saude
 on:
   schedule:
     - cron: '0 11 * * *' # 08:00 no horário de Brasília (UTC-3)
