@@ -45,3 +45,31 @@ jobs:
         with:
           commit_message: "Relatório Atualizado Automaticamente [Robô]"
           file_pattern: '*.pdf' # Só comita se for PDF
+          
+        - name: 7. Enviar por E-mail
+        uses: dawidd6/action-send-mail@v3
+        with:
+          # Configurações do Servidor (Gmail)
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          
+          # Credenciais (Pegando do Cofre que criamos)
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          
+          # Detalhes do E-mail
+          subject: Relatório de Saúde Atualizado - ${{ github.run_number }}
+          to: seu_email@gmail.com, email_do_chefe@prefeitura.gov.br # Separe por vírgula
+          from: Robô de Dados <eng.amb.prof.marcos@gmail.com>
+          body: |
+            Olá!
+            
+            O relatório de saúde foi atualizado automaticamente com os dados mais recentes.
+            Segue o PDF em anexo para análise.
+            
+            Atenciosamente,
+            Marcos Tomazini - Comissão Estatística.
+            
+          # O Arquivo para Anexar
+          attachments: Projeto_saude.pdf
