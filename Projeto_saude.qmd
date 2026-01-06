@@ -207,7 +207,7 @@ print(valores_estranhos)
 
 \vfill
 
-## Contexto dos dados analisados 
+## Contexto dos dados analisados
 
 Fonte dos dados: Portal da Transparência\
 Relatórios: "Ordem Cronológica dos Pagamentos" e "Despesa Orçamentária"\
@@ -300,8 +300,8 @@ ggplot(df_plot_data_final, aes(x = factor(ano_referencia), y = total_ano)) +
   # Títulos e Legendas
   labs(
     # AJUSTE PONTO 1: Quebra de linha automática no título (width = 45 caracteres)
-    title = str_wrap("Evolução do Desembolso Financeiro (Pago) - Secretaria de Saúde", width = 45),
-    y = "Total Pago (R$)", 
+    title = str_wrap("Evolução do Desembolso Financeiro (Liquidado) - Secretaria de Saúde", width = 45),
+    y = "Total Liquidado (R$)", 
     x = NULL,
     caption = "Fonte: Dados Financeiros da Saúde | Processamento: R"
   ) +
@@ -358,4 +358,1166 @@ kable(tabela_exibicao,
       caption = "Detalhamento da Execução Financeira Anual",
       col.names = c("Ano", "Valor Total Pago (Exato)", "Variação Anual", "Cresc. Acumulado"),
       align = c('l', 'r', 'c', 'c')) # l=esquerda, r=direita (números), c=centro
+```
+
+# VALORES DE RECURSOS LIVRES
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| 
+
+# BLOCO 1
+
+library(dplyr)
+library(ggplot2)
+library(scales)
+
+# 1. Tratamento e Categorização
+dados_grafico <- df_fontes_limpo %>%
+  # PASSO CORRETIVO: Garantir que valor é numérico e filtrar zeros
+  filter(valor_liquido > 0) %>%
+  mutate(
+    # PASSO CORRETIVO: Criar a variável de texto limpa AQUI dentro
+    fonte_std = trimws(as.character(fonte_de_recurso)),
+    
+    # Agora sim podemos usar fonte_std na lógica
+    categoria = if_else(grepl("^(0|303)\\b", fonte_std), 
+                        "1. Recursos Livres (Próprios + 15%)", 
+                        "2. Recursos Vinculados (SUS/Convênios)"),
+    
+    # Conversão para Milhões
+    valor_milhoes = valor_liquido / 1e6
+  ) %>%
+  # Agrupamento matemático: Somatório por Ano e Categoria
+  group_by(ano_referencia, categoria) %>%
+  summarise(total_ano_cat = sum(valor_milhoes, na.rm = TRUE), .groups = "drop")
+
+# 2. Cálculo dos Totais e Percentuais (Linha preta do gráfico)
+dados_percentuais <- dados_grafico %>%
+  group_by(ano_referencia) %>%
+  mutate(
+    total_ano = sum(total_ano_cat),
+    pct = (total_ano_cat / total_ano) * 100
+  ) %>%
+  ungroup() %>%
+  # Mantemos apenas a linha dos Recursos Livres para traçar o percentual
+  filter(grepl("Livres", categoria))
+
+# VERIFICAÇÃO DE SEGURANÇA (Evita erro de gráfico vazio)
+if(nrow(dados_percentuais) == 0) {
+  stop("ERRO CRÍTICO: O dataframe 'dados_percentuais' está vazio. Verifique se os códigos 0 ou 303 existem na coluna 'fonte_de_recurso'.")
+}
+
+# 3. Definição do Fator de Escala (Matemática do Eixo Duplo)
+# Adicionei na.rm = TRUE para evitar erro se houver algum NA perdido
+max_valor <- max(dados_percentuais$total_ano, na.rm = TRUE) 
+
+# Se max_valor for muito baixo (ex: erro de dados), forçamos um mínimo para não quebrar a escala
+if(max_valor == 0) max_valor <- 1 
+
+max_valor <- max_valor * 1.15 # 15% de folga visual no topo
+max_pct <- 100
+fator_escala <- max_valor / max_pct
+
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# CÁLCULO DE INDICADORES PARA O TEXTO DINÂMICO
+# Pegamos o último ano disponível nos dados
+ultimo_ano <- max(dados_grafico$ano_referencia)
+
+# Filtramos os dados desse ano
+dados_texto <- dados_grafico %>% filter(ano_referencia == ultimo_ano)
+
+# Cálculos
+v_total_ano   <- sum(dados_texto$total_ano_cat) # Total em Milhões
+v_livre_ano   <- dados_texto$total_ano_cat[grepl("Livres", dados_texto$categoria)] # Só o livre
+v_pct_livre   <- (v_livre_ano / v_total_ano) * 100 # Percentual
+
+# Variação em relação ao ano anterior (Opcional, mas rico)
+ano_anterior  <- ultimo_ano - 1
+v_livre_ant   <- dados_grafico %>% 
+                 filter(ano_referencia == ano_anterior & grepl("Livres", categoria)) %>% 
+                 pull(total_ano_cat)
+if(length(v_livre_ant) == 0) v_livre_ant <- v_livre_ano # Evita erro se não tiver ano anterior
+
+var_nominal   <- v_livre_ano - v_livre_ant
+txt_var       <- if_else(var_nominal >= 0, "um incremento nominal", "uma redução nominal")
+```
+
+O monitoramento da execução orçamentária da Saúde revela o grau de autonomia e o esforço fiscal do município frente às demandas do setor. No exercício de **`r ultimo_ano`**, o desembolso total liquidado atingiu a marca de **R\$ `r format(round(v_total_ano, 1), decimal.mark=",")` milhões**.
+
+A análise da composição dessas despesas (gráfico abaixo) destaca a preponderância dos **Recursos Próprios (Fonte Livre + 15%)**, que financiaram **`r format(round(v_pct_livre, 1), decimal.mark=",")`%** de todas as ações de saúde no período.
+
+Em termos absolutos, o Tesouro Municipal aportou **R\$ `r format(round(v_livre_ano, 1), decimal.mark=",")` milhões** com recursos não vinculados, representando `r txt_var` de **R\$ `r format(round(abs(var_nominal), 1), decimal.mark=",")` milhões** em comparação ao exercício anterior. Este indicador demonstra que o aporte municipal continua sendo o pilar central de sustentação dos serviços, superando significativamente o piso constitucional obrigatório e evidenciando a pressão sobre as receitas livres da Prefeitura.
+
+```{r}
+#| label: grafico-financiamento-saude
+#| fig-width: 12
+#| fig-height: 6
+#| warning: false
+#| message: false
+
+# BLOCO 2
+library(ggplot2)
+library(scales)
+library(dplyr)
+library(stringr)
+
+# --- 1. CÁLCULOS PRÉVIOS (Recalculando para garantir integridade) ---
+# Fator de escala: Sincroniza R$ (Milhões) com % (0-100)
+# Lógica: O teto do eixo Y será 15% maior que o maior valor financeiro encontrado
+max_valor_fin <- max(dados_percentuais$total_ano, na.rm = TRUE)
+limite_sup_dinamico <- max_valor_fin * 1.15
+fator_escala <- limite_sup_dinamico / 100 
+
+# --- 2. CONSTRUÇÃO DO GRÁFICO ---
+g <- ggplot() +
+  
+  # A. Camada de Barras (Volume Financeiro)
+  geom_col(data = dados_grafico, 
+           aes(x = factor(ano_referencia), y = total_ano_cat, fill = categoria),
+           width = 0.65, 
+           # ALTERAÇÃO AQUI: Adicione reverse = TRUE
+           position = position_stack(reverse = TRUE)) +
+  
+  # B. Rótulos Internos das Barras (Valor em R$)
+  geom_text(data = dados_grafico,
+            aes(x = factor(ano_referencia), y = total_ano_cat, 
+                group = categoria,
+                label = number(total_ano_cat, prefix = "R$ ", suffix = "M", 
+                               accuracy = 0.1, big.mark = ".", decimal.mark = ",")),
+            # ALTERAÇÃO AQUI: Mantenha o vjust e adicione reverse = TRUE
+            position = position_stack(vjust = 0.5, reverse = TRUE), 
+            color = "white", fontface = "bold", size = 5.5) +
+  
+  # C. Camada de Linha (% Recursos Próprios)
+  # Usamos o fator_escala para elevar a linha à altura correta visualmente
+  geom_line(data = dados_percentuais, 
+            aes(x = factor(ano_referencia), y = pct * fator_escala, group = 1),
+            color = "#2c3e50", linewidth = 1.2, linetype = "solid") + # Linha cinza escuro sólida
+  
+  geom_point(data = dados_percentuais, 
+             aes(x = factor(ano_referencia), y = pct * fator_escala),
+             color = "#2c3e50", fill = "white", shape = 21, size = 3, stroke = 1.5) +
+    # --- 3. ESCALAS E EIXOS (A Mágica do Eixo Duplo) ---
+  scale_y_continuous(
+    # Eixo Primário (Esquerda - Dinheiro)
+    name = "Desembolso Total (R$)",
+    labels = label_number(scale = 1, prefix = "R$ ", suffix = "M", big.mark = ".", decimal.mark = ","),
+    limits = c(0, limite_sup_dinamico), # Garante espaço para o rótulo da linha não cortar
+    expand = c(0, 0),
+    
+    # Eixo Secundário (Direita - Porcentagem)
+    # A transformação inversa: . / fator_escala
+    sec.axis = sec_axis(~ . / fator_escala, 
+                        name = "Participação de Rec. Próprios (%)",
+                        labels = function(x) paste0(round(x, 0), "%"))
+  ) +
+  
+  # Cores Profissionais (Inspirado no estilo 'Gold Standard')
+  # Laranja queimado para Próprios (destaque) e Azul Petróleo para Vinculados
+  scale_fill_manual(values = c(
+    "1. Recursos Livres (Próprios + 15%)" = "#E67E22", 
+    "2. Recursos Vinculados (SUS/Convênios)" = "#34495E"
+  )) +
+  
+  # --- 4. TEMA E ESTÉTICA ---
+  labs(
+    title = str_wrap("Composição do Financiamento da Saúde: Esforço Municipal vs. Transferências", width = 60),
+    subtitle = "Evolução do volume pago (barras) e participação percentual dos recursos livres (linha)",
+    x = NULL,
+    fill = NULL, # Remove título da legenda para limpar
+    caption = "Fonte: Contabilidade Municipal | Fonte 103/000 vs Outras Fontes"
+  ) +
+  
+  theme_minimal() +
+  theme(
+    # Grid
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_line(color = "#E0E0E0", linewidth = 0.5),
+    
+    # Eixos
+    axis.text.x = element_text(size = 12, face = "bold", color = "black", margin = margin(t=10)),
+    axis.text.y = element_text(size = 10, color = "grey40"),
+    axis.title.y = element_text(size = 11, color = "grey40", margin = margin(r=10)),
+    axis.title.y.right = element_text(angle = 90, margin = margin(l=10)), # Rotaciona titulo da direita
+    
+    # Legenda
+    legend.position = "bottom",
+    legend.text = element_text(size = 10, color = "grey30"),
+    legend.box.spacing = unit(0.2, "cm"),
+    
+    # Títulos
+    plot.title = element_text(size = 16, face = "plain", hjust = 0.5, margin = margin(b = 10)),
+    plot.subtitle = element_text(size = 12, color = "grey50", hjust = 0.5, margin = margin(b = 20)),
+    plot.caption = element_text(size = 8, color = "grey60", hjust = 0, margin = margin(t = 15))
+  )
+
+# Plotar
+print(g)
+```
+
+```{r}
+#| label: tabela-fontes-detalhada
+#| echo: false
+
+# BLOCO 3
+library(knitr)
+library(tidyr)
+library(dplyr)
+library(scales)
+
+# 1. PREPARAÇÃO DOS DADOS PARA TABELA
+tabela_exibicao <- dados_grafico %>%
+  # Pivotar: Transformar as categorias (linhas) em colunas separadas
+  pivot_wider(names_from = categoria, values_from = total_ano_cat) %>%
+  
+  # Juntar com os dados de percentual para ter o total geral
+  left_join(select(dados_percentuais, ano_referencia, pct), by = "ano_referencia") %>%
+  
+  mutate(
+    # Calcular o Total Geral (somando as colunas que estão em milhões)
+    Total_Geral = `1. Recursos Livres (Próprios + 15%)` + `2. Recursos Vinculados (SUS/Convênios)`,
+    
+    # --- FORMATAÇÃO DOS VALORES EXATOS ---
+    # Multiplicamos por 1e6 (1 milhão) para reverter a divisão do Bloco 1 e ter o valor cheio
+    
+    `1. Recursos Livres (Próprios + 15%)` = number(`1. Recursos Livres (Próprios + 15%)` * 1e6, 
+                                                   prefix = "R$ ", 
+                                                   big.mark = ".", 
+                                                   decimal.mark = ",", 
+                                                   accuracy = 0.01), # 0.01 garante os centavos
+    
+    `2. Recursos Vinculados (SUS/Convênios)` = number(`2. Recursos Vinculados (SUS/Convênios)` * 1e6, 
+                                                      prefix = "R$ ", 
+                                                      big.mark = ".", 
+                                                      decimal.mark = ",", 
+                                                      accuracy = 0.01),
+    
+    Total_Geral_Fmt = number(Total_Geral * 1e6, 
+                             prefix = "R$ ", 
+                             big.mark = ".", 
+                             decimal.mark = ",", 
+                             accuracy = 0.01),
+    
+    # Formatar Percentual
+    Participacao_Propria = paste0(round(pct, 1), "%")
+  ) %>%
+  # Selecionar e reordenar colunas finais
+  select(ano_referencia, 
+         `1. Recursos Livres (Próprios + 15%)`, 
+         `2. Recursos Vinculados (SUS/Convênios)`, 
+         Total_Geral_Fmt, 
+         Participacao_Propria)
+
+# 2. GERAR TABELA KABLE
+kable(tabela_exibicao,
+      caption = "Detalhamento das Fontes de Financiamento (Valores Nominais)",
+      col.names = c("Ano", "Recursos Próprios", "Recursos Vinculados", "Total Aplicado", "% Esforço Próprio"),
+      align = c('l', 'r', 'r', 'r', 'c'))
+```
+
+{{< pagebreak >}}
+
+# Fornecedores que consomem recursos livres da Saúde
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+# BLOCO 1: PREPARAÇÃO (FORNECEDORES - RECURSOS LIVRES/303)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(scales)
+
+# 1. Filtragem: Fontes 0 e 303 + Anos 2024/2025
+df_recurso_raw <- df_fontes_limpo %>%
+  filter(ano_referencia %in% c(2024, 2025)) %>%
+  # Filtro específico para as fontes solicitadas
+  filter(str_detect(fonte_de_recurso, "^0-|^303-")) %>% 
+  group_by(fornecedor, ano_referencia) %>%
+  summarise(total_pago = sum(valor_liquido, na.rm = TRUE), .groups = "drop")
+
+# 2. Pivotar para formato Wide (Comparativo)
+df_recurso_wide <- df_recurso_raw %>%
+  pivot_wider(names_from = ano_referencia, values_from = total_pago, names_prefix = "ano_") %>%
+  mutate(
+    ano_2024 = replace_na(ano_2024, 0),
+    ano_2025 = replace_na(ano_2025, 0)
+  ) %>%
+  
+  # Foco: Quem mais consome recurso livre EM 2025
+  arrange(desc(ano_2025)) %>%
+  slice_head(n = 10) %>%
+  
+  # 3. Cálculos Estatísticos
+  mutate(
+    diff_nominal = ano_2025 - ano_2024,
+    
+    pct_var = case_when(
+      ano_2024 > 0 ~ (ano_2025 - ano_2024) / ano_2024,
+      TRUE ~ 0
+    ),
+    
+    status = case_when(
+      ano_2024 == 0 ~ "NOVO",
+      ano_2025 > ano_2024 ~ "AUMENTO",
+      TRUE ~ "REDUCAO"
+    ),
+    
+    # Labels e Cores para o Gráfico
+    label_var = case_when(
+      status == "NOVO" ~ " NOVO",
+      status == "AUMENTO" ~ paste0("+", percent(pct_var, accuracy = 0.1)),
+      TRUE ~ percent(pct_var, accuracy = 0.1)
+    ),
+    
+    cor_label = case_when(
+      status == "NOVO" ~ "#E67E22",    # Laranja (Atenção para novos gastos fixos)
+      status == "AUMENTO" ~ "#C0392B", # Vermelho (Aumento de custo)
+      TRUE ~ "#27AE60"                 # Verde (Economia)
+    ),
+    
+    # Tratamento do nome
+    fornecedor_fmt = str_trunc(fornecedor, 40, "right")
+  )
+
+# 4. Pivotar para Gráfico
+df_recurso_plot <- df_recurso_wide %>%
+  pivot_longer(cols = c("ano_2024", "ano_2025"), 
+               names_to = "ano", 
+               values_to = "valor") %>%
+  mutate(
+    ano_label = if_else(ano == "ano_2024", "2024", "2025")
+  )
+
+# --- VARIÁVEIS PARA O TEXTO NARRATIVO ---
+# Top 1 Consumidor de Recurso Livre
+top1_livre <- df_recurso_wide %>% slice(1)
+txt_nome_livre <- top1_livre$fornecedor_fmt
+txt_val_livre  <- number(top1_livre$ano_2025, prefix="R$ ", big.mark=".", decimal.mark=",", scale=1e-6, suffix="M", accuracy=0.1)
+txt_pct_livre  <- percent(top1_livre$ano_2025 / sum(df_recurso_raw$total_pago[df_recurso_raw$ano_referencia==2025]) * 100, accuracy=0.1) 
+# Nota: O cálculo da porcentagem acima é aproximado em relação ao total filtrado. Se quiser sobre o total geral, precisaria da base completa.
+
+# Top Aumento Nominal
+top_aumento_livre <- df_recurso_wide %>% arrange(desc(diff_nominal)) %>% slice(1)
+txt_nome_aumento_livre <- top_aumento_livre$fornecedor_fmt
+txt_val_aumento_livre  <- number(top_aumento_livre$diff_nominal, prefix="R$ ", big.mark=".", decimal.mark=",", accuracy=1)
+```
+
+**Análise de Sustentabilidade:** O mapeamento dos pagamentos realizados com Recursos Ordinários (000) e Vinculados (303) evidencia que o fornecedor **`r txt_nome_livre`** é o maior destinatário de recursos do tesouro municipal em 2025, absorvendo aproximadamente **`r txt_val_livre`** do fluxo de caixa livre da pasta.
+
+Observa-se ainda que **`r txt_nome_aumento_livre`** apresentou o maior crescimento nominal nas despesas custeadas com recursos próprios, com um incremento de **`r txt_val_aumento_livre`** em comparação ao exercício anterior.
+
+```{r}
+#| label: grafico-fornecedor-livres
+#| fig-width: 12
+#| fig-height: 8
+#| warning: false
+#| message: false
+
+# BLOCO 3: GRÁFICO (RECURSOS LIVRES - DOURADO)
+library(ggplot2)
+
+ggplot(df_recurso_plot, aes(x = valor, y = reorder(fornecedor_fmt, valor))) +
+  
+  # Barras
+  geom_col(aes(fill = ano_label, alpha = ano_label), 
+           position = position_dodge(width = 0.8), 
+           width = 0.7) +
+  
+  # Rótulos
+  geom_text(data = df_recurso_wide,
+            aes(x = ano_2025, y = fornecedor_fmt, 
+                label = label_var, color = cor_label),
+            hjust = -0.15, 
+            position = position_nudge(y = -0.15), 
+            fontface = "bold", 
+            size = 3.5) +
+  
+  # CORES: Cinza (2024) e Dourado/Bronze (2025 - Tesouro)
+  scale_fill_manual(values = c("2024" = "#BDC3C7", "2025" = "#D4AC0D")) + 
+  scale_alpha_manual(values = c("2024" = 0.6, "2025" = 1.0)) +
+  scale_color_identity() +
+  
+  # Eixos
+  scale_x_continuous(
+    labels = label_number(scale = 1e-6, prefix = "R$ ", suffix = "M", big.mark = ".", decimal.mark = ","),
+    expand = expansion(mult = c(0, 0.2)) 
+  ) +
+  
+  labs(
+    title = "Top 10 Fornecedores: Consumo de Recursos Livres",
+    subtitle = "Fontes: 0-Ordinários e 303-Saúde (15%) | Comparativo 2024 vs 2025",
+    x = "Valor Pago (R$)",
+    y = NULL,
+    fill = "Ano",
+    alpha = "Ano",
+    caption = "Nota: Valores referem-se estritamente às fontes 000 e 303."
+  ) +
+  
+  theme_minimal() +
+  theme(
+    legend.position = c(0.85, 0.15),
+    legend.background = element_rect(fill = "white", color = "grey90"),
+    axis.text.y = element_text(size = 10, face = "bold", color = "#2c3e50", lineheight = 0.8),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x = element_line(color = "#e0e0e0", linetype = "dashed"),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.margin = margin(t=20, r=20, b=20, l=10)
+  )
+```
+
+```{r}
+#| label: tabela-fornecedor-livres
+#| echo: false
+#| message: false
+#| warning: false
+
+# BLOCO 4: TABELA DETALHADA (RECURSOS LIVRES)
+library(knitr)
+library(kableExtra)
+
+tabela_livre_pdf <- df_recurso_wide %>%
+  # Ordenar por quem consome mais HOJE (2025)
+  arrange(desc(ano_2025)) %>%
+  mutate(
+    rank = row_number(),
+    fornecedor = str_trunc(fornecedor, 40, "right"),
+    
+    v24 = number(ano_2024, prefix="R$ ", big.mark=".", decimal.mark=",", accuracy=1),
+    v25 = number(ano_2025, prefix="R$ ", big.mark=".", decimal.mark=",", accuracy=1),
+    dif = number(diff_nominal, prefix="R$ ", big.mark=".", decimal.mark=",", accuracy=1),
+    
+    var = case_when(
+      status == "NOVO" ~ "NOVO",
+      TRUE ~ percent(pct_var, accuracy = 0.1, decimal.mark = ",")
+    )
+  ) %>%
+  select(rank, fornecedor, v24, v25, dif, var)
+
+kable(tabela_livre_pdf,
+      caption = "Ranking de Fornecedores por Consumo de Recursos Próprios (2025)",
+      col.names = c("Rank", "Fornecedor", "Pago 2024", "Pago 2025", "Diferença", "Var %"),
+      align = c('c','l','r','r','r','c'),
+      booktabs = TRUE) %>%
+  
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    full_width = FALSE,
+    font_size = 8,
+    position = "center"
+  ) %>%
+  
+  row_spec(0, bold = TRUE, background = "#f0f0f0") %>%
+  
+  column_spec(1, width = "0.8cm") %>%
+  column_spec(2, width = "5.5cm") %>%
+  column_spec(3, width = "2.5cm") %>%
+  column_spec(4, width = "2.5cm") %>%
+  column_spec(5, width = "2.5cm") %>%
+  column_spec(6, width = "1.5cm") 
+```
+
+{{< pagebreak >}}
+
+```{r}
+# preparação
+#| echo: false
+#| message: false
+#| warning: false
+
+# BLOCO 1: PREPARAÇÃO (CURVA ABC FORNECEDORES)
+library(dplyr)
+library(stringr)
+library(scales)
+
+# 1. Definir o ano de análise (Pega o último ano presente nos dados)
+ano_analise_fornecedor <- max(df_despesas_limpo$ano_referencia, na.rm = TRUE)
+
+# 2. Agrupamento e Ranking
+df_fornecedores_top <- df_despesas_limpo %>%
+  filter(ano_referencia == ano_analise_fornecedor) %>%
+  # Agrupa por fornecedor e soma o valor PAGO
+  group_by(fornecedor) %>%
+  summarise(total_pago = sum(pago, na.rm = TRUE), .groups = "drop") %>%
+  
+  # Calcula percentuais e ranking
+  mutate(
+    pct_total = total_pago / sum(total_pago),
+    ranking = rank(-total_pago) # Rank descrescente (1 é o maior)
+  ) %>%
+  
+  # Ordena do maior para o menor
+  arrange(desc(total_pago)) %>%
+  
+  # Pega apenas os Top 10 para o gráfico
+  slice_head(n = 10) %>%
+  
+  mutate(
+    # Tratamento de Strings: Limita nomes muito longos para não quebrar o gráfico
+    # Ex: "CONSORCIO INTERMUNICIPAL..." vira "CONSORCIO INTERMUN..."
+    fornecedor_fmt = str_wrap(fornecedor, width = 30),
+    
+    # Cria o rótulo combinado (Valor + Porcentagem) para o gráfico
+    # Ex: R$ 500.000 (10.5%)
+    label_final = paste0(
+      number(total_pago, prefix = "R$ ", big.mark = ".", decimal.mark = ",", accuracy = 1, scale = 1), 
+      " (", percent(pct_total, accuracy = 0.1), ")"
+    )
+  )
+
+# Cálculo de Totais para o Texto Dinâmico
+total_top10 <- sum(df_fornecedores_top$total_pago)
+total_orcamento_ano <- sum(df_despesas_limpo$pago[df_despesas_limpo$ano_referencia == ano_analise_fornecedor], na.rm = TRUE)
+pct_top10 <- (total_top10 / total_orcamento_ano) * 100
+
+# Dados do TOP 1 (O maior credor)
+top1_nome <- df_fornecedores_top$fornecedor[1]
+top1_pct  <- df_fornecedores_top$pct_total[1] * 100
+```
+
+### **Curva ABC de Fornecedores (Top Payers `r ano_analise_fornecedor`)**
+
+**Análise Técnica:** No exercício de `r ano_analise_fornecedor`, observa-se uma concentração de pagamentos onde os **10 maiores fornecedores** representam **`r format(round(pct_top10, 1), decimal.mark=",")`%** de todo o orçamento executado (liquidado) pela pasta. O principal credor do período foi **`r top1_nome`**, absorvendo sozinho **`r format(round(top1_pct, 1), decimal.mark=",")`%** dos recursos financeiros, o que demonstra a relevância estratégica deste contrato para o funcionamento dos serviços de saúde.
+
+```{r}
+#| label: grafico-top-fornecedores
+#| fig-width: 12
+#| fig-height: 7
+#| warning: false
+#| message: false
+
+# BLOCO 3: GRÁFICO (CORRIGIDO)
+library(ggplot2)
+library(scales)
+
+# Criação do Gráfico
+# CORREÇÃO CRÍTICA AQUI: Mudamos de fornecedor_abrev para fornecedor_fmt
+ggplot(df_fornecedores_top, aes(x = total_pago, y = reorder(fornecedor_fmt, total_pago))) +
+  
+  # A. Barras com Gradiente baseado no valor
+  geom_col(aes(fill = total_pago), width = 0.75, show.legend = FALSE) +
+  
+  # B. Definição das Cores (Gradiente Roxo -> Verde/Azul)
+  scale_fill_gradient(low = "#7FB3D5", high = "#4A235A") + 
+  
+  # C. Rótulos de Dados
+  geom_text(aes(label = label_final),
+            hjust = -0.1, 
+            fontface = "bold", 
+            color = "#404040", 
+            size = 4) +
+  
+  # D. Ajuste da Escala X
+  scale_x_continuous(
+    labels = label_number(scale = 1e-6, prefix = "R$ ", suffix = "M", big.mark = ".", decimal.mark = ","),
+    expand = expansion(mult = c(0, 0.3)) 
+  ) +
+  
+  # E. Títulos
+  labs(
+    title = paste0("Top 10 Fornecedores - Secretaria de Saúde (", ano_analise_fornecedor, ")"),
+    subtitle = "Ranking dos credores por volume financeiro pago",
+    x = "Volume Total Pago (Milhões R$)",
+    y = NULL, 
+    caption = "Fonte: Sistema de Gestão Financeira | Filtragem: Status 'Pago'"
+  ) +
+  
+  # F. Tema Clean com Ajuste de Quebra de Linha
+  theme_minimal() +
+  theme(
+    # CORREÇÃO ESTÉTICA: lineheight ajusta o espaçamento das linhas quebradas
+    axis.text.y = element_text(size = 11, face = "bold", color = "#2c3e50", lineheight = 0.8),
+    
+    panel.grid.major.y = element_blank(), 
+    panel.grid.major.x = element_line(color = "#e0e0e0", linetype = "dashed"),
+    
+    plot.title = element_text(size = 16, face = "bold", color = "#2c3e50"),
+    plot.subtitle = element_text(size = 12, color = "grey50", margin = margin(b = 20)),
+    
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 10)
+  )
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+# BLOCO 1: PREPARAÇÃO (TOP 15 FORNECEDORES)
+library(dplyr)
+library(stringr)
+library(scales)
+
+# 1. Definir o ano de análise
+ano_analise_fornecedor <- max(df_despesas_limpo$ano_referencia, na.rm = TRUE)
+
+# 2. Agrupamento e Ranking
+df_fornecedores_top <- df_despesas_limpo %>%
+  filter(ano_referencia == ano_analise_fornecedor) %>%
+  group_by(fornecedor) %>%
+  summarise(total_pago = sum(pago, na.rm = TRUE), .groups = "drop") %>%
+  
+  mutate(
+    pct_total = total_pago / sum(total_pago),
+    ranking = rank(-total_pago)
+  ) %>%
+  
+  arrange(desc(total_pago)) %>%
+  
+  # ALTERAÇÃO 1: Mudado para 15
+  slice_head(n = 15) %>%
+  
+  mutate(
+    # Quebra de texto para nomes longos
+    fornecedor_fmt = str_wrap(fornecedor, width = 35),
+    
+    # ALTERAÇÃO 2: Formatação de "Valor Inteiro"
+    # accuracy = 1 garante número inteiro (sem centavos)
+    # scale = 1 garante que não divide por milhão (mostra o valor cheio)
+    label_final = paste0(
+      number(total_pago, prefix = "R$ ", big.mark = ".", decimal.mark = ",", accuracy = 1, scale = 1), 
+      " (", percent(pct_total, accuracy = 0.1), ")"
+    )
+  )
+
+# Recálculo de Totais para o Texto (Baseado no Top 15 agora)
+total_top15 <- sum(df_fornecedores_top$total_pago)
+total_orcamento_ano <- sum(df_despesas_limpo$pago[df_despesas_limpo$ano_referencia == ano_analise_fornecedor], na.rm = TRUE)
+pct_top15 <- (total_top15 / total_orcamento_ano) * 100
+
+top1_nome <- df_fornecedores_top$fornecedor[1]
+top1_pct  <- df_fornecedores_top$pct_total[1] * 100
+```
+
+```{r}
+#| label: tabela-top15-fornecedores
+#| echo: false
+#| message: false
+#| warning: false
+
+# BLOCO 4: TABELA COMPACTA (ESTILO CONFERÊNCIA)
+library(knitr)
+library(dplyr)
+library(scales)
+library(kableExtra)
+
+# 1. Seleção e Formatação
+tabela_fornecedores <- df_fornecedores_top %>%
+  select(ranking, fornecedor, total_pago, pct_total) %>%
+  mutate(
+    # Truncar em 50 caracteres: Evita quebra de linha excessiva (economiza altura)
+    fornecedor = str_trunc(fornecedor, 50, "right"),
+    
+    total_fmt = number(total_pago, prefix = "R$ ", big.mark = ".", decimal.mark = ",", accuracy = 1),
+    pct_fmt = percent(pct_total, accuracy = 0.1, decimal.mark = ",")
+  ) %>%
+  select(ranking, fornecedor, total_fmt, pct_fmt)
+
+# 2. Gerar Tabela Compacta
+kable(tabela_fornecedores,
+      caption = "Top 15 Fornecedores (Valores Nominais)",
+      col.names = c("Rank", "Fornecedor / Credor", "Valor Pago", "%"),
+      align = c('c', 'l', 'r', 'c'),
+      booktabs = TRUE) %>% # booktabs cria linhas horizontais mais elegantes
+  
+  # --- ESTILIZAÇÃO PDF/LATEX ---
+  kable_styling(
+    # "striped": linhas zebradas facilitam leitura
+    # "hold_position": força a tabela a ficar exatamente onde você colocou o código
+    latex_options = c("striped", "hold_position"), 
+    
+    full_width = FALSE,      # FALSE é crucial para não dar erro no PDF
+    font_size = 9,           # Fonte pequena para ser discreta/compacta
+    position = "center"
+  ) %>%
+  
+  # Cabeçalho Compacto (Cinza claro e negrito)
+  row_spec(0, bold = TRUE, background = "#f0f0f0", font_size = 10) %>%
+  
+  # --- CONTROLE FINO DE LARGURA (Total ~14.5cm) ---
+  # Isso garante que as colunas fiquem próximas, sem "vãos" grandes
+  column_spec(1, width = "1.0cm") %>%   # Rank
+  column_spec(2, width = "9.0cm") %>%   # Nome (Espaço suficiente para não quebrar muito)
+  column_spec(3, width = "3.0cm") %>%   # Valor
+  column_spec(4, width = "1.5cm")       # %
+```
+
+{{< pagebreak >}}
+
+# Comparação entre 2024 e 2025
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+# BLOCO 1: PREPARAÇÃO COMPARATIVA (2024 vs 2025)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(scales)
+
+# 1. Filtrar anos de interesse e agrupar
+df_comp_raw <- df_despesas_limpo %>%
+  filter(ano_referencia %in% c(2024, 2025)) %>%
+  group_by(fornecedor, ano_referencia) %>%
+  summarise(total_pago = sum(pago, na.rm = TRUE), .groups = "drop")
+
+# 2. Pivotar para formato Wide (Lado a Lado) para calcular variações
+df_comp_wide <- df_comp_raw %>%
+  pivot_wider(names_from = ano_referencia, values_from = total_pago, names_prefix = "ano_") %>%
+  
+  # Substituir NAs por 0 (casos onde não houve pagamento em um dos anos)
+  mutate(
+    ano_2024 = replace_na(ano_2024, 0),
+    ano_2025 = replace_na(ano_2025, 0)
+  ) %>%
+  
+  # Filtrar apenas quem teve pagamento em 2025 (Foco da gestão atual)
+  filter(ano_2025 > 0) %>%
+  
+  # Pegar TOP 10 de 2025
+  arrange(desc(ano_2025)) %>%
+  slice_head(n = 10) %>%
+  
+  # 3. Calcular Indicadores de Variação
+  mutate(
+    diff_nominal = ano_2025 - ano_2024,
+    
+    # Lógica Percentual e Status
+    status = case_when(
+      ano_2024 == 0 ~ "NOVO",
+      ano_2025 > ano_2024 ~ "AUMENTO",
+      ano_2025 < ano_2024 ~ "REDUCAO",
+      TRUE ~ "ESTAVEL"
+    ),
+    
+    pct_var = case_when(
+      ano_2024 > 0 ~ (ano_2025 - ano_2024) / ano_2024,
+      TRUE ~ 0
+    ),
+    
+    # Etiqueta Formatada para o Gráfico (Evitando caracteres Unicode problemáticos)
+    label_var = case_when(
+      status == "NOVO" ~ " NOVO",
+      status == "AUMENTO" ~ paste0("+", percent(pct_var, accuracy = 0.1)),
+      status == "REDUCAO" ~ percent(pct_var, accuracy = 0.1), # O sinal de menos já vem automático
+      TRUE ~ "-"
+    ),
+    
+    # Definir cores para o rótulo
+    cor_label = case_when(
+      status == "NOVO" ~ "#27AE60",    # Verde (Novidade)
+      status == "AUMENTO" ~ "#C0392B", # Vermelho (Alerta de gasto)
+      status == "REDUCAO" ~ "#2980B9", # Azul (Economia)
+      TRUE ~ "grey50"
+    ),
+    
+    # Tratar nomes para o eixo Y
+    fornecedor_fmt = str_wrap(fornecedor, width = 30)
+  )
+
+# 4. Pivotar de volta para Long (Formato que o ggplot gosta para barras agrupadas)
+df_plot_comp <- df_comp_wide %>%
+  pivot_longer(cols = c("ano_2024", "ano_2025"), 
+               names_to = "ano", 
+               values_to = "valor") %>%
+  mutate(
+    ano_label = if_else(ano == "ano_2024", "2024", "2025")
+  )
+
+# --- DADOS PARA O TEXTO ---
+# Contagem de novos fornecedores no top 10
+qtd_novos <- sum(df_comp_wide$status == "NOVO")
+
+# Maior aumento percentual (excluindo novos)
+maior_aumento <- df_comp_wide %>% 
+  filter(status == "AUMENTO") %>% 
+  arrange(desc(pct_var)) %>% 
+  slice(1)
+
+nome_maior_aumento <- if(nrow(maior_aumento) > 0) maior_aumento$fornecedor_fmt else "Nenhum"
+pct_maior_aumento <- if(nrow(maior_aumento) > 0) percent(maior_aumento$pct_var, accuracy=1) else "0%"
+```
+
+### **Comparativo de Fornecedores (2024 vs 2025)**
+
+**Análise Técnica:** Na comparação entre os exercícios de 2024 e 2025, observa-se uma dinâmica contratual onde destacam-se **`r if(qtd_novos == 1) "um novo fornecedor figurando" else paste(qtd_novos, "novos fornecedores figurando")`** entre os 10 maiores pagamentos do ano corrente.
+
+O maior incremento percentual do período foi registrado para **`r nome_maior_aumento`**, com uma variação de **`r pct_maior_aumento`** em relação ao ano anterior, sugerindo revisão de escopo ou aumento de demanda.
+
+```{r}
+#| label: grafico-comp-fornecedores
+#| fig-width: 12
+#| fig-height: 8
+#| warning: false
+#| message: false
+
+# BLOCO 3: GRÁFICO COMPARATIVO
+library(ggplot2)
+library(scales)
+
+ggplot(df_plot_comp, aes(x = valor, y = reorder(fornecedor_fmt, valor))) +
+  
+  # A. Barras Agrupadas (Dodge)
+  # position_dodge(0.8) coloca as barras uma ao lado da outra
+  geom_col(aes(fill = ano_label, alpha = ano_label), 
+           position = position_dodge(width = 0.8), 
+           width = 0.7) +
+  
+  # B. Rótulos de Variação (Apenas na barra de 2025)
+  # Usamos o dataframe original (WIDE) para plotar o texto apenas uma vez por fornecedor
+  geom_text(data = df_comp_wide,
+            aes(x = ano_2025, y = fornecedor_fmt, 
+                label = label_var, color = cor_label),
+            # Ajuste fino da posição: desloca um pouco para a direita da barra azul
+            hjust = -0.15, 
+            vjust = 0.5, # Alinha com o centro do grupo (mais próximo da barra azul devido à lógica visual)
+            position = position_nudge(y = -0.15), # Empurra levemente para baixo para alinhar com a barra de 2025
+            fontface = "bold", 
+            size = 3.5) +
+  
+  # C. Configuração de Cores (Cinza vs Azul)
+  scale_fill_manual(values = c("2024" = "#BDC3C7", "2025" = "#2980B9")) +
+  scale_alpha_manual(values = c("2024" = 0.7, "2025" = 1.0)) + # 2024 mais transparente
+  
+  # D. Mapeamento de Cores do Texto (Identidade direta sem legenda)
+  scale_color_identity() +
+  
+  # E. Eixos e Escalas
+  scale_x_continuous(
+    labels = label_number(scale = 1e-6, prefix = "R$ ", suffix = "M", big.mark = ".", decimal.mark = ","),
+    # Expansão generosa à direita para caber os rótulos de porcentagem
+    expand = expansion(mult = c(0, 0.2)) 
+  ) +
+  
+  # F. Títulos e Legendas
+  labs(
+    title = "Dinâmica de Fornecedores: Comparativo 2024 vs 2025",
+    subtitle = "Variação de gastos nos Top 10 principais contratos do ano atual",
+    x = "Volume Pago (R$)",
+    y = NULL,
+    fill = "Exercício",
+    alpha = "Exercício",
+    caption = "Nota: Rótulos indicam variação percentual sobre 2024. 'NOVO' indica ausência de pagamentos no ano anterior."
+  ) +
+  
+  # G. Tema Clean
+  theme_minimal() +
+  theme(
+    legend.position = c(0.85, 0.15), # Legenda flutuante no canto inferior direito
+    legend.background = element_rect(fill = "white", color = "grey90"),
+    axis.text.y = element_text(size = 10, face = "bold", color = "#2c3e50", lineheight = 0.8),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x = element_line(color = "#e0e0e0", linetype = "dashed"),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.margin = margin(t=20, r=20, b=20, l=10)
+  )
+```
+
+```{r}
+#| label: calculo-texto-diferenca
+#| echo: false
+#| warning: false
+#| message: false
+
+# Identificar quem teve o MAIOR AUMENTO NOMINAL (R$)
+top_diff_row <- df_comp_wide %>% 
+  arrange(desc(diff_nominal)) %>% 
+  slice(1)
+
+# Variáveis para o texto
+txt_nome_diff <- str_trunc(top_diff_row$fornecedor, 40)
+txt_val_diff  <- number(top_diff_row$diff_nominal, prefix="R$ ", big.mark=".", decimal.mark=",", accuracy=1)
+txt_pct_diff  <- percent(top_diff_row$pct_var, accuracy=0.1, decimal.mark=",")
+
+# Texto condicional: Se for NOVO, escreve "um novo contrato"; se não, "um incremento"
+txt_tipo_aumento <- if_else(top_diff_row$status == "NOVO", 
+                            "um novo contrato no valor total de", 
+                            "um incremento nominal de")
+```
+
+**Análise de Impacto Orçamentário:** A tabela a seguir detalha a variação financeira absoluta, ordenando os fornecedores pelo volume de recursos adicionados em relação ao ano anterior. O maior impacto financeiro no período foi gerado por **`r txt_nome_diff`**, representando **`r txt_tipo_aumentor txt_val_diff`** (+**`r txt_pct_diff`**) nos cofres públicos, sendo o principal responsável pela variação orçamentária observada.
+
+```{r}
+#| label: tabela-comparativa-completa
+#| echo: false
+#| message: false
+#| warning: false
+
+# BLOCO 4: TABELA COMPARATIVA COMPLETA (COM DIFERENÇA)
+library(knitr)
+library(dplyr)
+library(scales)
+library(kableExtra)
+
+# 1. Preparação e Formatação
+tabela_comp_full <- df_comp_wide %>%
+  arrange(desc(diff_nominal)) %>%
+  mutate(
+    ranking = row_number(),
+    
+    # Ajustei o corte do nome para 40 caracteres para ganhar espaço lateral
+    fornecedor = str_trunc(fornecedor, 40, "right"), 
+    
+    # Colunas de Valores
+    val_24_fmt = number(ano_2024, prefix = "R$ ", big.mark = ".", decimal.mark = ",", accuracy = 1),
+    val_25_fmt = number(ano_2025, prefix = "R$ ", big.mark = ".", decimal.mark = ",", accuracy = 1),
+    
+    # NOVA COLUNA: Diferença Nominal Formatada
+    # diff_nominal já foi calculado no Bloco 1
+    diff_fmt = number(diff_nominal, prefix = "R$ ", big.mark = ".", decimal.mark = ",", accuracy = 1),
+    
+    # Coluna de Variação %
+    var_fmt = case_when(
+      status == "NOVO" ~ "NOVO",
+      TRUE ~ percent(pct_var, accuracy = 0.1, decimal.mark = ",", suffix = "%")
+    )
+  ) %>%
+  # Seleciona as 6 colunas finais
+  select(ranking, fornecedor, val_24_fmt, val_25_fmt, diff_fmt, var_fmt)
+
+# 2. Gerar Tabela
+kable(tabela_comp_full,
+      caption = "Comparativo Financeiro Detalhado: 2024 vs 2025",
+      col.names = c("Rank", "Fornecedor", "Pago 2024", "Pago 2025", "Diferença (R$)", "Var.(%)"),
+      align = c('c', 'l', 'r', 'r', 'r', 'c'),
+      booktabs = TRUE) %>%
+  
+  # --- ESTILIZAÇÃO PDF ---
+  kable_styling(
+    latex_options = c("striped", "hold_position"), 
+    full_width = FALSE,
+    font_size = 8,      # Reduzi para 8 para caberem as 6 colunas confortavelmente
+    position = "center"
+  ) %>%
+  
+  # Cabeçalho
+  row_spec(0, bold = TRUE, background = "#f0f0f0", font_size = 9) %>%
+  
+  # --- REDISTRIBUIÇÃO DAS LARGURAS (Total ~16cm) ---
+  column_spec(1, width = "0.8cm") %>%  # Rank
+  column_spec(2, width = "5.5cm") %>%  # Nome (Apertamos um pouco aqui)
+  column_spec(3, width = "2.5cm") %>%  # 2024
+  column_spec(4, width = "2.5cm") %>%  # 2025
+  column_spec(5, width = "2.5cm") %>%  # Diferença (Nova)
+  column_spec(6, width = "1.5cm")      # %
+```
+
+# Natureza de despesa
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+# BLOCO 1: PREPARAÇÃO (NATUREZA DA DESPESA - RECURSOS LIVRES)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(scales)
+
+# 1. Filtragem: Recursos Livres + Anos 2024/2025
+# Ajuste o filtro "grepl" conforme o nome exato da sua fonte de recurso no banco
+df_nat_raw <- df_despesas_limpo %>%
+  filter(ano_referencia %in% c(2024, 2025)) %>%
+  group_by(natureza, ano_referencia) %>%
+  summarise(total_liquidado = sum(liquidado, na.rm = TRUE), .groups = "drop")
+
+# 2. Pivotar para formato Wide (Comparativo)
+df_nat_wide <- df_nat_raw %>%
+  pivot_wider(names_from = ano_referencia, values_from = total_liquidado, names_prefix = "ano_") %>%
+  mutate(
+    ano_2024 = replace_na(ano_2024, 0),
+    ano_2025 = replace_na(ano_2025, 0)
+  ) %>%
+  
+  # Foco nos maiores gastos de 2025
+  arrange(desc(ano_2025)) %>%
+  slice_head(n = 10) %>%
+  
+  # 3. Cálculos de Variação
+  mutate(
+    diff_nominal = ano_2025 - ano_2024,
+    
+    pct_var = case_when(
+      ano_2024 > 0 ~ (ano_2025 - ano_2024) / ano_2024,
+      TRUE ~ 0
+    ),
+    
+    # Status e Labels
+    status = case_when(
+      ano_2024 == 0 ~ "NOVO",
+      ano_2025 > ano_2024 ~ "AUMENTO",
+      TRUE ~ "REDUCAO" # Inclui estável
+    ),
+    
+    # Rótulo formatado para o gráfico
+    label_var = case_when(
+      status == "NOVO" ~ " NOVO",
+      status == "AUMENTO" ~ paste0("+", percent(pct_var, accuracy = 0.1)),
+      TRUE ~ percent(pct_var, accuracy = 0.1)
+    ),
+    
+    # Cores para o rótulo (Vermelho = Aumento de Gasto, Verde = Economia)
+    cor_label = case_when(
+      status == "NOVO" ~ "#D35400",    # Laranja
+      status == "AUMENTO" ~ "#C0392B", # Vermelho (Gasto subiu)
+      TRUE ~ "#27AE60"                 # Verde (Gasto caiu/economia)
+    ),
+    
+    # Limpeza do nome da natureza (remove códigos numéricos iniciais se houver, ex: "3.3.90.30 - Material" -> "Material")
+    # Se sua coluna já for limpa, pode simplificar esta linha
+    natureza_clean = str_remove(natureza, "^[0-9\\.\\s-]+"),
+    natureza_fmt = str_trunc(natureza_clean, 35, "right")
+  )
+
+# 4. Pivotar para Long (Gráfico)
+df_nat_plot <- df_nat_wide %>%
+  pivot_longer(cols = c("ano_2024", "ano_2025"), 
+               names_to = "ano", 
+               values_to = "valor") %>%
+  mutate(
+    ano_label = if_else(ano == "ano_2024", "2024", "2025")
+  )
+
+# --- DADOS PARA O TEXTO NARRATIVO ---
+# Item que mais consome recurso livre
+top1_nat_row <- df_nat_wide %>% slice(1)
+txt_nat_top1 <- top1_nat_row$natureza_clean
+txt_val_top1 <- number(top1_nat_row$ano_2025, prefix="R$ ", big.mark=".", decimal.mark=",", scale=1e-6, suffix="M", accuracy=0.1)
+
+# Item com maior aumento nominal (impacto no caixa)
+maior_aumento_nat <- df_nat_wide %>% arrange(desc(diff_nominal)) %>% slice(1)
+txt_nat_aumento <- maior_aumento_nat$natureza_clean
+txt_val_aumento <- number(maior_aumento_nat$diff_nominal, prefix="R$ ", big.mark=".", decimal.mark=",", accuracy=1)
+txt_pct_aumento <- percent(maior_aumento_nat$pct_var, accuracy=0.1, decimal.mark=",")
+```
+
+A análise da execução orçamentária por natureza da despesa aponta que o grupo **`r txt_nat_top1`** representa o maior volume de dispêndios no exercício atual, totalizando **`r txt_val_top1`** liquidados.
+
+Em termos comparativos, destaca-se a elevação nos gastos com **`r txt_nat_aumento`**, que registrou um incremento nominal de **`r txt_val_aumento`** (+`r txt_pct_aumento`) em relação a 2024, sendo o principal vetor de crescimento das despesas neste recorte.
+
+```{r}
+#| label: grafico-natureza-livres
+#| fig-width: 12
+#| fig-height: 8
+#| warning: false
+#| message: false
+
+# BLOCO 3: GRÁFICO (RECURSOS LIVRES)
+library(ggplot2)
+
+ggplot(df_nat_plot, aes(x = valor, y = reorder(natureza_fmt, valor))) +
+  
+  # Barras Agrupadas
+  geom_col(aes(fill = ano_label, alpha = ano_label), 
+           position = position_dodge(width = 0.8), 
+           width = 0.7) +
+  
+  # Rótulos de Variação (Somente na barra de 2025)
+  geom_text(data = df_nat_wide,
+            aes(x = ano_2025, y = natureza_fmt, 
+                label = label_var, color = cor_label),
+            hjust = -0.15, 
+            position = position_nudge(y = -0.15), 
+            fontface = "bold", 
+            size = 3.5) +
+  
+  # Cores: Cinza (2024) e Verde Esmeralda (2025 - Foco em Recursos Próprios)
+  scale_fill_manual(values = c("2024" = "#BDC3C7", "2025" = "#16A085")) +
+  scale_alpha_manual(values = c("2024" = 0.6, "2025" = 1.0)) +
+  scale_color_identity() +
+  
+  # Eixos
+  scale_x_continuous(
+    labels = label_number(scale = 1e-6, prefix = "R$ ", suffix = "M", big.mark = ".", decimal.mark = ","),
+    expand = expansion(mult = c(0, 0.2)) 
+  ) +
+  
+  labs(
+    title = "Top 10 Despesas por Natureza (Liquidado)",
+    subtitle = "Comparativo 2024 vs 2025 por Natureza da Despesa",
+    x = "Valor Liquidado",
+    y = NULL,
+    fill = "Ano",
+    alpha = "Ano",
+    caption = "Fonte: Anexo Despesa Orçamentária"
+  ) +
+  
+  theme_minimal() +
+  theme(
+    legend.position = c(0.85, 0.15),
+    legend.background = element_rect(fill = "white", color = "grey90"),
+    # lineheight ajustado para evitar corte no texto do eixo Y
+    axis.text.y = element_text(size = 10, face = "bold", color = "#2c3e50", lineheight = 0.8),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x = element_line(color = "#e0e0e0", linetype = "dashed"),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.margin = margin(t=20, r=20, b=20, l=10)
+  )
+```
+
+A tabela a seguir classifica as despesas pela variação nominal (R\$), permitindo identificar os principais vetores de expansão do gasto. O maior aporte adicional de recursos concentrou-se em **`r txt_nat_aumento`**, evidenciando a área que mais pressionou o orçamento de recursos livres neste exercício.
+
+```{r}
+#| label: tabela-natureza-livres
+#| echo: false
+#| message: false
+#| warning: false
+
+# BLOCO 4: TABELA DETALHADA (RECURSOS LIVRES)
+library(knitr)
+library(kableExtra)
+
+tabela_nat_pdf <- df_nat_wide %>%
+  # Ordenar pelo maior aumento de gasto (Impacto no Livre)
+  arrange(desc(diff_nominal)) %>%
+  mutate(
+    rank = row_number(),
+    # Truncar nome
+    natureza = str_trunc(natureza_clean, 40, "right"),
+    
+    # Formatação
+    v24 = number(ano_2024, prefix="R$ ", big.mark=".", decimal.mark=",", accuracy=1),
+    v25 = number(ano_2025, prefix="R$ ", big.mark=".", decimal.mark=",", accuracy=1),
+    dif = number(diff_nominal, prefix="R$ ", big.mark=".", decimal.mark=",", accuracy=1),
+    var = percent(pct_var, accuracy=0.1, decimal.mark=",")
+  ) %>%
+  select(rank, natureza, v24, v25, dif, var)
+
+kable(tabela_nat_pdf,
+      caption = "Detalhamento por Natureza de Despesa",
+      col.names = c("Rank", "Natureza", "2024", "2025", "Diferença", "Var %"),
+      align = c('c','l','r','r','r','c'),
+      booktabs = TRUE) %>%
+  
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    full_width = FALSE,
+    font_size = 8,
+    position = "center"
+  ) %>%
+  
+  row_spec(0, bold = TRUE, background = "#f0f0f0") %>%
+  
+  # Larguras otimizadas para PDF
+  column_spec(1, width = "0.8cm") %>%
+  column_spec(2, width = "5.5cm") %>%
+  column_spec(3, width = "2.5cm") %>%
+  column_spec(4, width = "2.5cm") %>%
+  column_spec(5, width = "2.5cm") %>%
+  column_spec(6, width = "1.5cm")
 ```
